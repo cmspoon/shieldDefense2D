@@ -1,0 +1,13 @@
+main.exe
+*.exe
+*.o
+*.out
+*.app
+
+glad.c
+
+.vscode/
+
+build/
+bin/
+obj/
