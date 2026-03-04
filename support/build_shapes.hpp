@@ -24,11 +24,4 @@ BasicShape GetCircle (VAOStruct vao, float radius=1.0, int points= 40, glm::vec3
 BasicShape GetTexturedCircle (VAOStruct vao, float radius=1.0, int points= 40, glm::vec3 location = glm::vec3(0.0), float size = 1.0f);
 
 
-BasicShape GetHull (VAOStruct vao, float width, float height,
-                         glm::vec3 bottom_left=glm::vec3(0.0f));
-
-BasicShape GetTexturedHull (VAOStruct vao, float width, float height,
-                         glm::vec3 bottom_left=glm::vec3(0.0f), float size = 1.0f);
-
-
 #endif //BUILD_SHAPES_HPP

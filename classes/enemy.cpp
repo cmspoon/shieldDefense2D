@@ -6,7 +6,7 @@
 Enemy::Enemy() {
     position = glm::vec3(0.0f);
     velocity_x = glm::vec3(0.0f);
-    knockback_velocity = glm::vec3(0.0f);
+    kb_velocity = glm::vec3(0.0f);
     velocity_y = 0.0f;
     health = 3;
     is_grounded = true;
@@ -17,7 +17,7 @@ Enemy::Enemy() {
 
 void Enemy::Spawn(float spawn_x, float spawn_y) {
     position = glm::vec3(spawn_x, spawn_y, 0.0f);
-    knockback_velocity = glm::vec3(0.0f);
+    kb_velocity = glm::vec3(0.0f);
     active = true;
     health = 3;
 }
@@ -39,8 +39,8 @@ void Enemy::Update(glm::vec3 target_position, float delta_time) {
         velocity_x = direction * speed;
         position += velocity_x * delta_time;
     } else {
-        position += knockback_velocity * delta_time;
-        knockback_velocity *= 0.8f;
+        position += kb_velocity * delta_time;
+        kb_velocity *= 0.8f;
     }
 
     velocity_y -= 3.5f * delta_time;
@@ -52,15 +52,15 @@ void Enemy::Update(glm::vec3 target_position, float delta_time) {
     }
 }
 
-void Enemy::TakeDamage(glm::vec3 bullet_position, float knockback_force) {
+void Enemy::TakeDamage(glm::vec3 bullet_position, float kb_force) {
     health--;
     if (health <= 0) {
         Deactivate();
     } else {
         glm::vec3 direction = glm::normalize(position - bullet_position);
         direction.y = 0.0f;
-        knockback_velocity.x = direction.x * knockback_force;
-        knockback_velocity.y = 0.0f;
+        kb_velocity.x = direction.x * kb_force;
+        kb_velocity.y = 0.0f;
         
         velocity_y = 0.3f;
         is_grounded = false;
@@ -76,4 +76,16 @@ void Enemy::Draw(unsigned int shader_program, glm::mat4 view_matrix) {
     
     glUniformMatrix4fv(glGetUniformLocation(shader_program, "model"), 1, GL_FALSE, &model[0][0]);
     shape->Draw();
+}
+
+void Enemy::Spawn(std::vector<Enemy*>& enemies) {
+    float spawn_x = (rand() % 2 == 0) ? -4.0f : 4.0f;
+    float spawn_y = -0.57f;
+    
+    for (auto& enemy : enemies) {
+        if (!enemy->IsActive()) {
+            enemy->Spawn(spawn_x, spawn_y);
+            break;
+        }
+    }
 }

@@ -5,6 +5,7 @@
 #include "classes/Shader.hpp"
 #include "classes/Player.hpp"
 #include "classes/Enemy.hpp"
+#include "classes/game.hpp"
 #include <vector>
 #include <cstdlib>
 #include <ctime>
@@ -17,14 +18,13 @@ void mouse_callback(GLFWwindow* window, double x_pos, double y_pos);
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 600;
 
-// globalb
+// global
 glm::vec4 clear_color (0.2f, 0.2f, 0.2f, 1.0f);
 glm::mat4 identity (1.0f);
 glm::mat4 model (1.0f);
+Game* state = nullptr;
 bool space_pressed = false;
-
 bool leftclick_pressed = false;
-bool game_over = false;
 
 // camera
 glm::vec2 cam_offset(0.0f, 0.0f);
@@ -36,28 +36,6 @@ double mouse_y = SCR_HEIGHT / 2.0;
 
 // player
 Player* player;
-
-// bullets
-struct Bullet {
-    glm::vec3 position;
-    glm::vec3 velocity;
-    float angle;
-    bool active;
-};
-std::vector<Bullet> bullets;
-float fire_rate = 0.0f;
-const float INTERVAL = 0.5f;
-const float ENEMY_SPAWN_INTERVAL = 2.0f;
-
-
-// enemies
-std::vector<Enemy*> enemies;
-float enemy_spawn_timer = 0.0f;
-
-// power core
-glm::vec3 power_core_position(0.0f, -0.2f, 0.0f);
-int shield_health = 4;
-float shield_scale = 1.0f;
 
 int main()
 {
@@ -92,34 +70,34 @@ int main()
     texture_vao.attributes.push_back(texture_position_attr);
     texture_vao.attributes.push_back(texture_coord_attr);
 
+    state = new Game();
+
     // shapes
 
     BasicShape sky = GetTexturedRectangle(texture_vao, glm::vec3(-4.0f, -1.0f, 0.0f), 8.0f, 4.0f, 1.0f);
     BasicShape grass = GetTexturedRectangle(texture_vao,glm::vec3(-4.0f, -1.3f, 0.0f), 8.0f, 0.6f, 1.0f);
     
-    BasicShape power_core = GetTexturedCircle(texture_vao, 0.1f, 40, power_core_position, 1.0f);
+    BasicShape power_core = GetTexturedCircle(texture_vao, 0.1f, 40, state->power_core_position, 1.0f);
     BasicShape shield = GetCircle(vao, 0.25f, 60, glm::vec3(0.0f, 0.0f, 0.0f));
     
     BasicShape player_body = GetTexturedRectangle(texture_vao, glm::vec3(-0.5f, -1.0f, 0.0f), 1.0f, 2.0f, 1.0f);
     BasicShape player_arm = GetTexturedRectangle(texture_vao, glm::vec3(-0.2f, -0.4f, 0.0f), 1.0f, 1.0f, 1.0f);
 
+    BasicShape health_bar_shape = GetTexturedRectangle(texture_vao, glm::vec3(-0.5f, -0.5f, 0.0f), 1.0f, 1.0f, 1.0f);
+
     BasicShape bullet_shape = GetTexturedRectangle(texture_vao, glm::vec3(0.0f, -0.5f, 0.0f), 1.0f, 1.0f, 1.0f);
 
     BasicShape enemy_shape = GetTexturedRectangle(texture_vao, glm::vec3(-0.5f, -1.0f, 0.0f), 1.0f, 2.0f, 1.0f);
 
+    // set-up
+
     player = new Player(glm::vec3(0.4f, -0.5f, 0.0f));
     player->SetShapes(&player_body, &player_arm);
     
-    for (int i = 0; i < 5; i++) {
-        Enemy* enemy = new Enemy();
+    for (auto& enemy : state->enemies) {
         enemy->SetShape(&enemy_shape);
-        enemies.push_back(enemy);
     }
-
-    if (!enemies.empty()) {
-        float spawn_x = (rand() % 2 == 0) ? -4.0f : 4.0f;
-        enemies[0]->Spawn(spawn_x, -0.57f);
-    }
+    Enemy::Spawn(state->enemies);
 
     float delta_time = 0.0f;
     float last_frame = 0.0f;
@@ -155,96 +133,11 @@ int main()
         // player
         // ----------
         player->RotateArm(mouse_x, mouse_y, actual_width, actual_height, cam_offset, cam_zoom);
-        player->Update(delta_time);
+        state->Update(delta_time, *player, leftclick_pressed);
 
-
-        // shooting and collisons
-        // --------
-        fire_rate += delta_time;
-        if (leftclick_pressed && fire_rate >= INTERVAL) {
-            Bullet bullet;
-            glm::vec3 hand_pos = player->GetHand();
-            bullet.position = hand_pos;
-            bullet.angle = player->GetArmAngle();
-            float angle_rad = glm::radians(bullet.angle);
-                bullet.velocity = glm::vec3(cos(angle_rad) * 4.5f, sin(angle_rad) * 4.5f , 0.0f);
-            bullet.active = true;
-            bullets.push_back(bullet);
-            fire_rate = 0.0f;
-        }
-
-        for (int i = bullets.size() - 1; i >= 0; i--) {
-            if (bullets[i].active) {
-                bullets[i].position += bullets[i].velocity * delta_time;
-                if (bullets[i].position.x > 4.0f || bullets[i].position.x < -4.0f ||
-                    bullets[i].position.y > 4.0f || bullets[i].position.y < -4.0f ||
-                    bullets[i].position.y <= -0.68f) {
-                    bullets[i].active = false;
-                }
-            }
-            if (!bullets[i].active) {
-                bullets.erase(bullets.begin() + i);
-            }
-        }
-
-        for (int i = bullets.size() - 1; i >= 0; i--) {
-            if (bullets[i].active) {
-                for (auto& enemy : enemies) {
-                    if (enemy->IsActive()) {
-                        glm::vec3 enemy_pos = enemy->GetPosition();
-                        float collision_distance = 0.035f + enemy->GetSize() * 0.5f;
-                        float dist = glm::distance(bullets[i].position, enemy_pos);
-                        
-                        if (dist < collision_distance) {
-                            bullets[i].active = false;
-                            enemy->TakeDamage(bullets[i].position, 40.0f);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // enemies
-        // -------
-        for (auto& enemy : enemies) {
-            if (enemy->IsActive()) {
-                enemy->Update(power_core_position, delta_time);
-                float dist = glm::length(enemy->GetPosition().x - power_core_position.x);
-                if (dist < 0.05f) {
-                    enemy->Deactivate();
-                    
-                    if (shield_health > 0) {
-                        shield_health--;
-                        
-                        if (shield_health <= 0) {
-                            shield_scale = 0.0f;
-                        } else {
-                            shield_scale = 0.6f + (shield_health * 0.1f);
-                        }
-                    } else {
-                        game_over = true;
-                    }
-                }
-            }
-        }
-
-
-        enemy_spawn_timer += delta_time;
-        if (enemy_spawn_timer >= ENEMY_SPAWN_INTERVAL) {
-            enemy_spawn_timer = 0.0f;
-            for (auto& enemy : enemies) {
-                if (!enemy->IsActive()) {
-                    float spawn_x = (rand() % 2 == 0) ? -4.0f : 4.0f;
-                    enemy->Spawn(spawn_x, -0.57f);
-                    break;
-                }
-            }
-        }
-
-        // render
+        // render loop
         // ------
-        if (game_over) {
+        if (state->game_over) {
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
         } else {      
@@ -267,7 +160,7 @@ int main()
             
             // draw power core
             glm::mat4 power_core_model = view;
-            power_core_model = glm::translate(power_core_model, power_core_position);
+            power_core_model = glm::translate(power_core_model, state->power_core_position);
             power_core_model = glm::scale(power_core_model, glm::vec3(1.0f, 1.0f, 1.0f));
             shader_program.setMat4("model", power_core_model);
             glBindTexture(GL_TEXTURE_2D, core_texture);
@@ -276,17 +169,38 @@ int main()
 
             // draw shield
             shader_program.setBool("is_textured", false);
-            if (shield_scale != 0.0f) {
+            if (state->shield_scale != 0.0f) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 shader_program.setVec4("set_color", glm::vec4(0.8f, 0.2f, 0.8f, 0.6f));
                 glm::mat4 shield_model = view;
-                shield_model = glm::translate(shield_model, power_core_position * 2.0f);
-                shield_model = glm::scale(shield_model, glm::vec3(shield_scale, shield_scale, 1.0f));
+                shield_model = glm::translate(shield_model, state->power_core_position * 2.0f);
+                shield_model = glm::scale(shield_model, glm::vec3(state->shield_scale, state->shield_scale, 1.0f));
                 shader_program.setMat4("model", shield_model);
                 shield.Draw();
                 glDisable(GL_BLEND);
             }
+            
+            // draw health bar
+            shader_program.setBool("is_textured", false);
+            float health_ratio = (float)player->GetHealth() / (float)player->GetMaxHealth();
+            float bar_width = 0.5f;
+            float bar_height = 0.1f;
+            float bar_cy = 0.9f;
+            float left_edge = -0.95f;
+        
+
+            glm::mat4 health_bar_model = glm::translate(identity, glm::vec3(left_edge + bar_width * 0.5f, bar_cy, 0.0f));
+            health_bar_model = glm::scale(health_bar_model, glm::vec3(bar_width, bar_height, 1.0f));
+            shader_program.setVec4("set_color", glm::vec4(0.3f, 0.3f, 0.3f, 1.0f));
+            shader_program.setMat4("model", health_bar_model);
+            health_bar_shape.Draw();
+
+            health_bar_model = glm::translate(identity, glm::vec3(left_edge + (bar_width * health_ratio) * 0.5f, bar_cy, 0.0f));
+            health_bar_model = glm::scale(health_bar_model, glm::vec3(bar_width * health_ratio, bar_height, 1.0f));
+            shader_program.setVec4("set_color", glm::vec4(0.2f, 0.85f, 0.2f, 1.0f));
+            shader_program.setMat4("model", health_bar_model);
+            health_bar_shape.Draw();
 
             // draw player
             glEnable(GL_BLEND);
@@ -299,7 +213,7 @@ int main()
 
             // draw bullets
             shader_program.setVec4("set_color", glm::vec4(0.9, 0.9, 0.2, 1.0));
-            for (auto& bullet : bullets) {
+            for (auto& bullet : player->bullets) {
                 if (bullet.active) {
                     glm::mat4 bullet_model = view;
                     bullet_model = glm::translate(bullet_model, bullet.position);
@@ -312,7 +226,7 @@ int main()
             
             // draw enemies
             shader_program.setVec4("set_color", glm::vec4(0.9, 0.2, 0.2, 1.0));
-            for (auto& enemy: enemies) {
+            for (auto& enemy: state->enemies) {
                 if (enemy->IsActive()) {
                     enemy->Draw(shader_program.ID, view);
                 }
@@ -335,10 +249,12 @@ int main()
     enemy_shape.DeallocateShape();
     bullet_shape.DeallocateShape();
 
+
     delete player;
-    for (auto& enemy : enemies) {
+    for (auto& enemy : state->enemies) {
         delete enemy;
     }
+    delete state;
 
     glDeleteProgram(shader_program.ID);
 
